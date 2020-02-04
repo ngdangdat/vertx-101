@@ -4,8 +4,9 @@ import com.jsoniter.output.JsonStream
 import com.vertx.api.model.Response
 import io.vertx.lang.scala.ScalaVerticle
 import io.vertx.scala.core.Vertx
-import io.vertx.scala.ext.web.{FileUpload, Router, RoutingContext}
+import io.vertx.scala.ext.web.{Router, RoutingContext}
 import io.vertx.scala.ext.web.handler.BodyHandler
+import java.nio.file.{Files, Paths, StandardCopyOption}
 
 import scala.util.{Failure, Success}
 
@@ -15,7 +16,26 @@ object Application extends App {
   sys.addShutdownHook(() => vertx.close())
 
   class ServerVertical extends ScalaVerticle {
-    def uploadHandler(req: RoutingContext): Unit = {}
+    def rename(source: String, newFileName: String) = {
+      Files.move(
+        Paths.get(source),
+        Paths.get(
+          List(source.split("/").dropRight(1).mkString("/"), newFileName)
+            .mkString("/")
+        ),
+        StandardCopyOption.REPLACE_EXISTING
+      )
+    }
+    def uploadHandler(req: RoutingContext) = {
+      val fileOpt = req.fileUploads().headOption
+      if (fileOpt.isDefined) {
+        val file = fileOpt.get
+        val saved = rename(file.uploadedFileName, file.fileName)
+      }
+      req.response().putHeader("content-type", "application/json")
+      req.response().end("{\"message\":\"Upload OK\"}")
+    }
+
     override def start(): Unit = {
       val port: Int = 8080
       val router = Router.router(vertx)
@@ -25,17 +45,15 @@ object Application extends App {
           req.response().putHeader("content-type", "application/json")
           req.response().end("{\"message\":\"Validator core API\"}")
         })
-      router.route.handler(BodyHandler.create())
+      router
+        .route("/upload")
+        .handler(
+          BodyHandler.create
+            .setUploadsDirectory("/Users/dat-nguyen/Code/upload")
+        )
       router
         .post("/upload")
-        .handler(req => {
-          val fileOpt = req.fileUploads().headOption
-          if (fileOpt.isDefined) {
-            println(s"Uploaded file name${fileOpt.get.uploadedFileName}")
-          }
-          req.response().putHeader("content-type", "application/json")
-          req.response().end("{\"message\":\"Upload OK\"}")
-        })
+        .handler(uploadHandler)
       router
         .post("/result")
         .handler(req => {
