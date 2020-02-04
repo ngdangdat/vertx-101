@@ -1,11 +1,8 @@
-
 name := "vertx-scala-101"
 
 version := "0.1"
 
 scalaVersion := "2.12.10"
-
-name := "vertx-martiply-api"
 
 version := "0.3.3"
 
@@ -28,6 +25,7 @@ libraryDependencies ++= Seq(
 libraryDependencies += "io.vertx" %% "vertx-lang-scala" % vertxVersion
 libraryDependencies += "io.vertx" %% "vertx-config-scala" % vertxVersion
 libraryDependencies += "io.vertx" %% "vertx-web-scala" % vertxVersion
+libraryDependencies += "com.jsoniter" % "jsoniter" % "0.9.23"
 
 assemblyMergeStrategy in assembly := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
