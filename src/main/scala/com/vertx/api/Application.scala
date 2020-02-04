@@ -1,39 +1,58 @@
 package com.vertx.api
 
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+
 import com.jsoniter.output.JsonStream
 import com.vertx.api.model.Response
 import io.vertx.lang.scala.ScalaVerticle
 import io.vertx.scala.core.Vertx
-import io.vertx.scala.ext.web.{Router, RoutingContext}
 import io.vertx.scala.ext.web.handler.BodyHandler
-import java.nio.file.{Files, Paths, StandardCopyOption}
+import io.vertx.scala.ext.web.{FileUpload, Router, RoutingContext}
 
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Properties, Success}
 
 object Application extends App {
   val vertx = Vertx.vertx()
+  val uploadFolder = Properties.envOrNone("UPLOAD_PATH")
   vertx.deployVerticle(new ServerVertical)
   sys.addShutdownHook(() => vertx.close())
 
   class ServerVertical extends ScalaVerticle {
-    def rename(source: String, newFileName: String) = {
+    def rename(source: String, newFileName: String): Path = {
       Files.move(
         Paths.get(source),
         Paths.get(
-          List(source.split("/").dropRight(1).mkString("/"), newFileName)
-            .mkString("/")
+          (source.split("/").dropRight(1) :+ newFileName).mkString("/")
         ),
         StandardCopyOption.REPLACE_EXISTING
       )
     }
-    def uploadHandler(req: RoutingContext) = {
+
+    def validateFile(fOpt: Option[FileUpload]): Either[String, Boolean] = {
+      val MAX_SIZE: Long = 1024 * 1024
+      val ACCEPTED_CONTENT_TYPES = List("application/CSV")
+      if (fOpt.isEmpty) return Left("Invalid file uploaded")
+      if (fOpt.get.size > MAX_SIZE) return Left("File size exceeded")
+      if (!ACCEPTED_CONTENT_TYPES.contains(fOpt.get.contentType)) return Left("Content type not accepted")
+      Right(true)
+    }
+
+    /**
+     * Return a file path to client
+     *
+     * @param req
+     */
+    def uploadHandler(req: RoutingContext): Unit = {
       val fileOpt = req.fileUploads().headOption
-      if (fileOpt.isDefined) {
-        val file = fileOpt.get
-        val saved = rename(file.uploadedFileName, file.fileName)
+      validateFile(fileOpt) match {
+        case Left(s) =>
+          req.response().putHeader("content-type", "application/json")
+          jError(req, new Throwable(s))
+        case Right(_) =>
+          val filePath = rename(fileOpt.get.uploadedFileName, fileOpt.get.fileName)
+          req.response().putHeader("content-type", "application/json")
+          req.response().end("{\"filePath\": \"" + filePath + "\"}")
       }
-      req.response().putHeader("content-type", "application/json")
-      req.response().end("{\"message\":\"Upload OK\"}")
     }
 
     override def start(): Unit = {
@@ -49,7 +68,7 @@ object Application extends App {
         .route("/upload")
         .handler(
           BodyHandler.create
-            .setUploadsDirectory("/Users/dat-nguyen/Code/upload")
+            .setUploadsDirectory(uploadFolder.get)
         )
       router
         .post("/upload")
@@ -57,8 +76,8 @@ object Application extends App {
       router
         .post("/result")
         .handler(req => {
-          req.response().putHeader("content-type", "application/json")
-          req.response().end("{\"message\":\"Result OK\"}")
+          req.response.putHeader("content-type", "application/json")
+          req.response.end("{\"message\":\"Result OK\"}")
         })
       router
         .route("/*")
@@ -78,7 +97,9 @@ object Application extends App {
       req
         .response()
         .end(JsonStream.serialize(Response.error(throwable.getMessage)))
+
     def jSuccess[A](req: RoutingContext, load: Response[A]): Unit =
       req.response.end(JsonStream.serialize(load))
   }
+
 }
